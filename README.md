@@ -12,3 +12,5 @@
   - 배치 commit으로 insert 몇건당 commit 하는지 명시
   - 배치 commit에 실패하면, 개별 commit 으로 재시도
   - insert 하기전에 truncate 할지 yaml에 명시
+  - insert 실패하면 별도 로그에 기록
+  - euckr 범위 밖의 문자가 포함된 경우 insert 하지 않고 별도 로그에 기록
