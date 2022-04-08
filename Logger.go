@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"log"
 
@@ -52,28 +51,11 @@ func setExceptLogFile(brokenLog io.Writer, dbErrLog io.Writer) {
 	DbErrLog = log.New(dbErrLog, "", 0)
 }
 
-// WriteDBLog 쿼리 오류가 발생하면, DB log 파일에 별도로 남긴다.
-func WriteDBLog(err error, msg string) {
-
-	logMsg := fmt.Sprintf("%s: %s", err, msg)
+func getKrString(msg string) string {
 	if conf.EucKrLog {
-		msgEucKr, _ := cp949.To([]byte(logMsg))
-		Error.Println(string(msgEucKr))
-
-		msgEucKr, _ = cp949.To([]byte(msg))
-		DbErrLog.Println(string(msgEucKr) + ";")
-	} else {
-		Error.Println(logMsg)
-		DbErrLog.Println(msg + ";")
+		msgEucKr, _ := cp949.To([]byte(msg))
+		return string(msgEucKr)
 	}
-}
 
-func WriteBrokenLog(query string) {
-
-	if conf.EucKrLog {
-		msgEucKr, _ := cp949.To([]byte(query))
-		BrokenLog.Println(string(msgEucKr) + ";")
-	} else {
-		BrokenLog.Println(query + ";")
-	}
+	return msg
 }

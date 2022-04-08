@@ -14,6 +14,7 @@ var conf AppConfig // yamlFile에서 읽은 설정
 
 var yamlFile string       // args 에서 읽은 .yml 파일명
 var isNoWriteLogFile bool // args 에서 읽은 로그 파일로 쓸지 여부
+var enableTraceLog bool   // args 에서 Trace 로그를 사용할지 여부
 
 var waitGlobal sync.WaitGroup
 
@@ -35,6 +36,8 @@ func openFile(filename string, flag int) *os.File {
 func init() {
 	flag.StringVar(&yamlFile, "config", "config.yml", "config yaml file name(.yml)")
 	flag.BoolVar(&isNoWriteLogFile, "nolog", false, "if true, NO file log is written. only stdio")
+	flag.BoolVar(&enableTraceLog, "trace", false, "if true, enable trace log")
+
 	flag.Usage = usage
 }
 
@@ -54,7 +57,7 @@ func main() {
 	flag.Parse()
 
 	// setting log
-	InitLogger(ioutil.Discard, os.Stdout, os.Stdout, os.Stderr)
+	InitLogger(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
 
 	var sysLog *os.File
 	if !isNoWriteLogFile {
@@ -62,6 +65,11 @@ func main() {
 		sysLog = openFile("logs/sys_"+time.Now().Format("20060102")+".log", os.O_CREATE|os.O_APPEND|os.O_RDWR)
 
 		multiWriter := io.MultiWriter(sysLog, os.Stdout)
+		if enableTraceLog {
+			Trace.SetOutput(multiWriter)
+		} else {
+			Trace.SetOutput(ioutil.Discard)
+		}
 		Info.SetOutput(multiWriter)
 		Warning.SetOutput(multiWriter)
 
