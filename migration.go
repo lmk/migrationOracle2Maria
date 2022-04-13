@@ -12,11 +12,6 @@ import (
 	"github.com/suapapa/go_hangul/encoding/cp949"
 )
 
-type ColInfo struct {
-	dataType   string
-	dataLength int
-}
-
 // makeFieldName colName을 ``로 감싸고 ,로 연결한다
 func makeFieldName(colNames []string) string {
 	sep := ","

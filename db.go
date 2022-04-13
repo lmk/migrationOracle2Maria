@@ -4,7 +4,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
+
+type ColInfo struct {
+	dataType   string
+	dataLength int
+}
 
 // getColumnInfo 오라클 컬럼 목록을 읽는다.
 func getColumnInfo(ora *sql.DB, tableName string) (map[string]ColInfo, error) {
@@ -24,15 +30,13 @@ func getColumnInfo(ora *sql.DB, tableName string) (map[string]ColInfo, error) {
 		var colName string
 		rows.Scan(&colName, &colInfo.dataType, &colInfo.dataLength)
 		colInfoList[colName] = colInfo
-
-		//Info.Printf("The data is: %s, %s, %v\n", tableInfo.Name, colName, colInfo)
 	}
 
 	return colInfoList, nil
 }
 
 func ConnectMaria() *sql.DB {
-	maria, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", conf.Maria.User, conf.Maria.Password, conf.Maria.Ip, conf.Maria.Port, conf.Maria.Database))
+	maria, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?autocommit=true", conf.Maria.User, conf.Maria.Password, conf.Maria.Ip, conf.Maria.Port, conf.Maria.Database))
 	if err != nil {
 		Error.Fatal(err)
 	}
@@ -59,22 +63,25 @@ func execQuery(db *sql.DB, query string) error {
 		return err
 	}
 
-	n, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
+	//n, err := result.RowsAffected()
+	// if err != nil {
+	// 	return err
+	// }
 
-	if n <= 0 {
-		return errors.New("rowsaffected is 0")
-	}
+	// if n <= 0 {
+	// 	return errors.New("rowsaffected is 0")
+	// }
 
-	l, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
+	// mariadb 에서 insert 문은 LastInsertId()에 성공 결과가 담긴다.
+	if strings.HasPrefix(strings.ToLower(strings.Trim(query, " \n\r\t")), "insert") {
+		l, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
 
-	if l <= 0 {
-		return errors.New("lastinsertid is 0")
+		if l <= 0 {
+			return errors.New("lastinsertid is 0")
+		}
 	}
 
 	return nil

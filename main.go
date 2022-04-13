@@ -103,6 +103,18 @@ func main() {
 
 	startTime := time.Now()
 
+	// 마이그레이션전 쿼리
+	for _, query := range conf.Maria.BeforeQuerys {
+		maria := ConnectMaria()
+		defer maria.Close()
+		err := execQuery(maria, query)
+		if err != nil {
+			Error.Fatal(err.Error() + "," + query)
+		}
+		maria.Close()
+	}
+
+	// 마이그레이션
 	for _, tableInfo := range conf.Tables {
 		waitGlobal.Add(1)
 		go func(tableInfo Table) {
@@ -112,6 +124,17 @@ func main() {
 	}
 
 	waitGlobal.Wait()
+
+	// 마이그레이션후 쿼리
+	for _, query := range conf.Maria.AfterQuerys {
+		maria := ConnectMaria()
+		defer maria.Close()
+		err := execQuery(maria, query)
+		if err != nil {
+			Error.Fatal(err.Error() + "," + query)
+		}
+		Info.Printf("%s", query)
+	}
 
 	duration := time.Since(startTime)
 	Info.Printf("%d Tables Duration %v", len(conf.Tables), duration)

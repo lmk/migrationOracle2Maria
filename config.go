@@ -31,13 +31,15 @@ type Oracle struct {
 
 // Maria
 type Maria struct {
-	BeforeTruncate string `yaml:"before_truncate"`
-	Ip             string `yaml:"ip"`
-	Port           int    `yaml:"port"`
-	Database       string `yaml:"database"`
-	User           string `yaml:"user"`
-	Password       string `yaml:"password"`
-	FetchSize      int    `yaml:"fetch_size"`
+	BeforeTruncate string   `yaml:"before_truncate"`
+	Ip             string   `yaml:"ip"`
+	Port           int      `yaml:"port"`
+	Database       string   `yaml:"database"`
+	User           string   `yaml:"user"`
+	Password       string   `yaml:"password"`
+	FetchSize      int      `yaml:"fetch_size"`
+	BeforeQuerys   []string `yaml:"before_query"`
+	AfterQuerys    []string `yaml:"after_query"`
 }
 
 // Tables
