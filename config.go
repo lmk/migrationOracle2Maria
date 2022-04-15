@@ -68,6 +68,10 @@ func (conf *AppConfig) checkRequired() error {
 	// table default 값은 maria 설정을 따른다.
 	for i, t := range conf.Tables {
 
+		if len(conf.Tables[i].TargetName) <= 0 {
+			conf.Tables[i].TargetName = conf.Tables[i].SourceName
+		}
+
 		// 테이블 명은 대문자로
 		conf.Tables[i].TargetName = strings.ToUpper(conf.Tables[i].TargetName)
 

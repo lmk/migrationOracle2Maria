@@ -85,6 +85,7 @@ func main() {
 		Info.Fatal(err)
 	}
 
+	// 필수값을 체크하고, 기본값을 셋팅한다.
 	err = conf.checkRequired()
 	if err != nil {
 		Info.Fatal(err)
