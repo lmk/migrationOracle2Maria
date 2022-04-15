@@ -15,11 +15,12 @@
   - insert 실패하면 별도 로그에 기록
   - euckr 범위 밖의 문자가 포함된 경우 insert 하지 않고 별도 로그에 기록
   
-### 대상 테이블 명이 다른 경우
-  - tables의 name에 %가 포함되어 있으면 여러 테이블을 의미한다.
+### 순차 테이블
+  - tables의 name에 %가 포함되어 있으면 여러 테이블을 의미한다. (순차 테이블로 표현하겠다)
   - '%01d', '%02d', '%03d' 등 formatted 규칙을 지정할 수 있다.
   - 시작 인덱스와 종료 인덱스는 start_idx, end_idx에 지정한다.
-  - target_name에 대상 테이블명을 지장할 수 있다.
+  - target_name에 마리아DB의 대상 테이블명을 지정 하여, 오라클의 여러 테이블에서 select 하여, 마리아DB 한개 테이블에 insert 하게된다.
+  - thread_count 가 명시되어 있으면, thread_count * index 개수만큼 thread를 만들어서 insert 처리한다.
   ```ymal
 tables:
   - name: TEST_TBL_%02d
