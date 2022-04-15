@@ -14,3 +14,17 @@
   - insert 하기전에 truncate 할지 yaml에 명시
   - insert 실패하면 별도 로그에 기록
   - euckr 범위 밖의 문자가 포함된 경우 insert 하지 않고 별도 로그에 기록
+  
+### 대상 테이블 명이 다른 경우
+  - tables의 name에 %가 포함되어 있으면 여러 테이블을 의미한다.
+  - '%01d', '%02d', '%03d' 등 formatted 규칙을 지정할 수 있다.
+  - 시작 인덱스와 종료 인덱스는 start_idx, end_idx에 지정한다.
+  - target_name에 대상 테이블명을 지장할 수 있다.
+  ```ymal
+tables:
+  - name: TEST_TBL_%02d
+    start_idx: 0
+    end_idx: 10
+    target_name: TEST_TBL
+    before_truncate: true
+  ```

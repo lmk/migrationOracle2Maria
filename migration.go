@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -77,7 +76,7 @@ func makeInsertQuery(table Table, values []interface{}, colNames []string, colIn
 	}
 
 	return fmt.Sprintf("insert into %s (%s) values (%s)",
-		table.Name,
+		table.TargetName,
 		makeFieldName(colNames),
 		strings.Join(valList, ","))
 }
@@ -141,7 +140,7 @@ RETRY:
 // newInsert mariadb batch insert
 func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tableInfo Table, tableState *TableStatus) {
 
-	Trace.Printf("%s, start thread %3d", tableInfo.Name, threadIndex)
+	Trace.Printf("%s, start thread %3d", tableInfo.TargetName, threadIndex)
 
 	maria := ConnectMaria()
 	defer maria.Close()
@@ -162,7 +161,7 @@ func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tab
 		_, err := tx.Exec(msg)
 		if err != nil {
 			retryQ <- msg
-			Trace.Printf("%s, %3d, push retryQ, %s, %s", tableInfo.Name, threadIndex, err, getKrString(msg))
+			Trace.Printf("%s, %3d, push retryQ, %s, %s", tableInfo.TargetName, threadIndex, err, getKrString(msg))
 			continue
 		} else {
 			buf = append(buf, msg)
@@ -174,17 +173,17 @@ func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tab
 			//commit
 			err = tx.Commit()
 			if err != nil {
-				Warning.Printf("%s, fail tx.commit %s", tableInfo.Name, err)
+				Warning.Printf("%s, fail tx.commit %s", tableInfo.TargetName, err)
 				for _, m := range buf {
 					if len(m) > 0 {
 						retryQ <- m
-						Trace.Printf("%s, %3d, push retryQ, %s", tableInfo.Name, threadIndex, getKrString(msg))
+						Trace.Printf("%s, %3d, push retryQ, %s", tableInfo.TargetName, threadIndex, getKrString(msg))
 					}
 				}
 
 				err = tx.Rollback()
 				if err != nil {
-					Error.Fatalf("%s, %3d, fail tx.rollback %s", tableInfo.Name, threadIndex, err)
+					Error.Fatalf("%s, %3d, fail tx.rollback %s", tableInfo.TargetName, threadIndex, err)
 				}
 
 				count = 0
@@ -212,13 +211,13 @@ func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tab
 			for _, msg := range buf {
 				if len(msg) > 0 {
 					retryQ <- msg
-					Trace.Printf("%s, %3d, push retryQ, %s", tableInfo.Name, threadIndex, getKrString(msg))
+					Trace.Printf("%s, %3d, push retryQ, %s", tableInfo.TargetName, threadIndex, getKrString(msg))
 				}
 			}
 
 			err = tx.Rollback()
 			if err != nil {
-				Error.Fatalf("%s, %3d, fail tx.rollback %s", tableInfo.Name, threadIndex, err)
+				Error.Fatalf("%s, %3d, fail tx.rollback %s", tableInfo.TargetName, threadIndex, err)
 			}
 		} else {
 			tableState.batchCount.Add(int64(count))
@@ -226,46 +225,9 @@ func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tab
 	}
 
 	maria.Close()
-	Trace.Printf("%s, end thread %3d", tableInfo.Name, threadIndex)
+	Trace.Printf("%s, end thread %3d", tableInfo.TargetName, threadIndex)
 	tableState.threadCount.Add(-1)
 	tableState.wait.Done()
-}
-
-func reportTable(tableInfo Table, status *TableStatus, ora *sql.DB, duration time.Duration) {
-
-	// 오라클 count
-	err := ora.QueryRow("select count(*) from " + tableInfo.Name).Scan(&status.oracleRow)
-	if err != nil {
-		Error.Fatal(err)
-	}
-
-	// 마리아 count
-	maria := ConnectMaria()
-	defer maria.Close()
-
-	err = maria.QueryRow("select count(*) from " + tableInfo.Name).Scan(&status.mariaRow)
-	if err != nil {
-		Error.Fatal(err)
-	}
-
-	// 로그 출력
-	Info.Printf("%s, Report Oracle:%d, Maria:%d, broken:%d, dbError:%d, batch:%d, retry:%d, duration:%v",
-		tableInfo.Name,
-		status.oracleRow,
-		status.mariaRow,
-		status.brokenCount.count,
-		status.dbErrorCount.count,
-		status.batchCount.count,
-		status.retryCount.count,
-		duration)
-
-	if status.oracleRow != (status.mariaRow + status.brokenCount.count + status.dbErrorCount.count) {
-		Error.Printf("%s, miss count oracle", tableInfo.Name)
-	}
-
-	if status.mariaRow != (status.batchCount.count + status.retryCount.count) {
-		Error.Printf("%s, miss count maria", tableInfo.Name)
-	}
 }
 
 func (t *Table) isSkipField(fieldName string) bool {
@@ -298,15 +260,18 @@ func makeSelectQuery(tableInfo Table, colInfo map[string]ColInfo) string {
 		}
 	}
 
-	return fmt.Sprintf("select %s from %s", strings.Join(fields, ","), tableInfo.Name)
+	return fmt.Sprintf("select %s from %s", strings.Join(fields, ","), tableInfo.SourceName)
 }
 
-func newSelect(insertQ chan<- string, ora *sql.DB, tableInfo Table, status *TableStatus) {
+func newSelect(insertQ chan<- string, tableInfo Table, status *TableStatus) {
 
-	Trace.Printf("%s, start select thread", tableInfo.Name)
+	Trace.Printf("%s, start select thread", tableInfo.SourceName)
+
+	ora := ConnectOracle()
+	defer ora.Close()
 
 	// 오라클 컬럼 정보를 읽는다.
-	colInfo, err := getColumnInfo(ora, tableInfo.Name)
+	colInfo, err := getColumnInfo(ora, tableInfo.SourceName)
 	if err != nil {
 		Error.Fatal(err)
 	}
@@ -352,28 +317,27 @@ func newSelect(insertQ chan<- string, ora *sql.DB, tableInfo Table, status *Tabl
 
 	close(insertQ)
 
-	Trace.Printf("%s, end select thread", tableInfo.Name)
+	Trace.Printf("%s, end select thread", tableInfo.SourceName)
 	status.wait.Done()
 }
 
-func migrationTable(tableInfo Table) {
+func migrationTable(tableInfo Table) Report {
 
-	startTime := time.Now()
+	var status TableStatus
 
 	if strings.EqualFold(tableInfo.BeforeTruncate, "true") {
-		truncateTable(tableInfo.Name)
-		Info.Printf("%s, truncate table", tableInfo.Name)
+		truncateTable(tableInfo.TargetName)
+		Info.Printf("%s, truncate table", tableInfo.TargetName)
 	}
 
 	insertQ := make(chan string, 1000)
 	retryQ := make(chan string, 1000)
 
-	var status TableStatus
 	status.threadCount.Add(tableInfo.ThreadCount)
 
 	// maria retry thread 생성
 	status.wait.Add(1)
-	go RetryInsert(retryQ, tableInfo.Name, &status)
+	go RetryInsert(retryQ, tableInfo.TargetName, &status)
 
 	// thread 개수만큼 maria insert thread 생성
 	threadCount := tableInfo.ThreadCount
@@ -384,22 +348,13 @@ func migrationTable(tableInfo Table) {
 		threadCount--
 	}
 
-	// 오라클에 접속
-	ora, err := sql.Open("godror", fmt.Sprintf("%s/%s@%s", conf.Oracle.User, conf.Oracle.Password, conf.Oracle.Database))
-	if err != nil {
-		Error.Fatal(err)
-	}
-	defer ora.Close()
-
 	// oracle select thread
 	status.wait.Add(1)
-	go newSelect(insertQ, ora, tableInfo, &status)
+	go newSelect(insertQ, tableInfo, &status)
 
-	// 모든 thread가 종료되면, 리포팅
 	status.wait.Wait()
 
 	close(retryQ)
 
-	duration := time.Since(startTime)
-	reportTable(tableInfo, &status, ora, duration)
+	return status.ToReport()
 }

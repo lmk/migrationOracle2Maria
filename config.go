@@ -44,13 +44,17 @@ type Maria struct {
 
 // Tables
 type Table struct {
-	Name           string   `yaml:"name"`
+	SourceName     string   `yaml:"name"`        // Oracle Table name
+	TargetName     string   `yaml:"target_name"` // Maria Table name
+	StartIndex     int      `yaml:"start_idx"`
+	EndIndex       int      `yaml:"end_idx"`
 	FetchSize      int      `yaml:"fetch_size"`
 	BeforeTruncate string   `yaml:"before_truncate"`
 	SkipColumns    []string `yaml:"skip_columns"`
 	ThreadCount    int      `yaml:"thread_count"`
 }
 
+// checkRequired 필수값을 체크하고, 기본값을 셋팅한다.
 func (conf *AppConfig) checkRequired() error {
 
 	if len(conf.BrokenLog) <= 0 {
@@ -65,7 +69,7 @@ func (conf *AppConfig) checkRequired() error {
 	for i, t := range conf.Tables {
 
 		// 테이블 명은 대문자로
-		conf.Tables[i].Name = strings.ToUpper(conf.Tables[i].Name)
+		conf.Tables[i].TargetName = strings.ToUpper(conf.Tables[i].TargetName)
 
 		if t.ThreadCount <= 0 {
 			conf.Tables[i].ThreadCount = 1

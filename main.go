@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -116,11 +117,67 @@ func main() {
 
 	// 마이그레이션
 	for _, tableInfo := range conf.Tables {
-		waitGlobal.Add(1)
-		go func(tableInfo Table) {
-			migrationTable(tableInfo)
+
+		if strings.Contains(tableInfo.SourceName, "%") {
+
+			// src 테이블이 복수개인 경우
+			waitGlobal.Add(1)
+
+			startTime := time.Now()
+
+			var waitGroup sync.WaitGroup
+
+			tableList := []Table{}
+			reportList := []Report{}
+
+			// 한번만 truncate 한다.
+			if strings.EqualFold(tableInfo.BeforeTruncate, "true") {
+				truncateTable(tableInfo.TargetName)
+				Info.Printf("%s, truncate table", tableInfo.TargetName)
+				tableInfo.BeforeTruncate = "false"
+			}
+
+			fmtString := tableInfo.SourceName
+
+			for i := tableInfo.StartIndex; i <= tableInfo.EndIndex; i++ {
+
+				tableInfo.SourceName = fmt.Sprintf(fmtString, i)
+				if strings.Contains(tableInfo.SourceName, "!") {
+					Error.Fatalf("Invalid SourceName: %s", fmtString)
+				}
+
+				tableList = append(tableList, tableInfo)
+
+				waitGroup.Add(1)
+				go func(tableInfo Table) {
+					report := migrationTable(tableInfo)
+					reportList = append(reportList, report)
+					waitGroup.Done()
+				}(tableInfo)
+			}
+
+			// group thread가 모두 끝나야 report를 한다.
+			waitGroup.Wait()
+
+			duration := time.Since(startTime)
+			reportMultiTables(tableList, reportList, duration)
+
 			waitGlobal.Done()
-		}(tableInfo)
+
+		} else {
+			waitGlobal.Add(1)
+			go func(tableInfo Table) {
+
+				startTime := time.Now()
+
+				report := migrationTable(tableInfo)
+
+				duration := time.Since(startTime)
+				reportTable(tableInfo, &report, duration)
+
+				waitGlobal.Done()
+			}(tableInfo)
+		}
 	}
 
 	waitGlobal.Wait()

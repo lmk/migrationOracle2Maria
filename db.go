@@ -44,6 +44,15 @@ func ConnectMaria() *sql.DB {
 	return maria
 }
 
+func ConnectOracle() *sql.DB {
+	ora, err := sql.Open("godror", fmt.Sprintf("%s/%s@%s", conf.Oracle.User, conf.Oracle.Password, conf.Oracle.Database))
+	if err != nil {
+		Error.Fatal(err)
+	}
+
+	return ora
+}
+
 // truncateTable mariadb 테이블을 truncate 한다.
 func truncateTable(tableName string) {
 
@@ -85,4 +94,28 @@ func execQuery(db *sql.DB, query string) error {
 	}
 
 	return nil
+}
+
+func getDbCount(conn *sql.DB, tableName string) int64 {
+	var count int64
+	err := conn.QueryRow("select count(*) from " + tableName).Scan(&count)
+	if err != nil {
+		Error.Panic(err)
+	}
+
+	return count
+}
+
+func getOracleCount(tableName string) int64 {
+	ora := ConnectOracle()
+	defer ora.Close()
+
+	return getDbCount(ora, tableName)
+}
+
+func getMairaCount(tableName string) int64 {
+	maria := ConnectMaria()
+	defer maria.Close()
+
+	return getDbCount(maria, tableName)
 }

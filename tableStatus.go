@@ -36,3 +36,15 @@ type TableStatus struct {
 	threadCount  CounterInt   // 현재 동작중인 thread count
 	wait         sync.WaitGroup
 }
+
+func (ts *TableStatus) ToReport() Report {
+	var r Report
+	r.oracleRow = ts.oracleRow
+	r.mariaRow = ts.mariaRow
+	r.batchCount = ts.batchCount.count
+	r.retryCount = ts.retryCount.count
+	r.brokenCount = ts.brokenCount.count
+	r.dbErrorCount = ts.dbErrorCount.count
+
+	return r
+}
