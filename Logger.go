@@ -2,7 +2,10 @@ package main
 
 import (
 	"io"
+	"io/ioutil"
 	"log"
+	"os"
+	"time"
 
 	"github.com/suapapa/go_hangul/encoding/cp949"
 )
@@ -26,7 +29,7 @@ func InitLogger(
 	traceHandle io.Writer,
 	infoHandle io.Writer,
 	warningHandle io.Writer,
-	errorHandle io.Writer) {
+	errorHandle io.Writer) *os.File {
 
 	Trace = log.New(traceHandle,
 		"TRACE: ",
@@ -43,6 +46,26 @@ func InitLogger(
 	Error = log.New(errorHandle,
 		"ERROR: ",
 		log.Ldate|log.Ltime|log.Lshortfile)
+
+	var sysLog *os.File
+	if !isNoWriteLogFile {
+		os.Mkdir("logs", 0755)
+		sysLog = openFile("logs/sys_"+time.Now().Format("20060102")+".log", os.O_CREATE|os.O_APPEND|os.O_RDWR)
+
+		multiWriter := io.MultiWriter(sysLog, os.Stdout)
+		if enableTraceLog {
+			Trace.SetOutput(multiWriter)
+		} else {
+			Trace.SetOutput(ioutil.Discard)
+		}
+		Info.SetOutput(multiWriter)
+		Warning.SetOutput(multiWriter)
+
+		multiWriter = io.MultiWriter(sysLog, os.Stderr)
+		Error.SetOutput(multiWriter)
+	}
+
+	return sysLog
 }
 
 func setExceptLogFile(brokenLog io.Writer, dbErrLog io.Writer) {

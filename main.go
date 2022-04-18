@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
@@ -16,6 +14,7 @@ var conf AppConfig // yamlFile에서 읽은 설정
 var yamlFile string       // args 에서 읽은 .yml 파일명
 var isNoWriteLogFile bool // args 에서 읽은 로그 파일로 쓸지 여부
 var enableTraceLog bool   // args 에서 Trace 로그를 사용할지 여부
+var enableParallel bool   // table별도 병력 처리할지 여부
 
 var waitGlobal sync.WaitGroup
 
@@ -38,6 +37,7 @@ func init() {
 	flag.StringVar(&yamlFile, "config", "config.yml", "config yaml file name(.yml)")
 	flag.BoolVar(&isNoWriteLogFile, "nolog", false, "if true, NO file log is written. only stdio")
 	flag.BoolVar(&enableTraceLog, "trace", false, "if true, enable trace log")
+	flag.BoolVar(&enableParallel, "parallel", false, "if true, parallel processing by table")
 
 	flag.Usage = usage
 }
@@ -58,25 +58,7 @@ func main() {
 	flag.Parse()
 
 	// setting log
-	InitLogger(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
-
-	var sysLog *os.File
-	if !isNoWriteLogFile {
-		os.Mkdir("logs", 0755)
-		sysLog = openFile("logs/sys_"+time.Now().Format("20060102")+".log", os.O_CREATE|os.O_APPEND|os.O_RDWR)
-
-		multiWriter := io.MultiWriter(sysLog, os.Stdout)
-		if enableTraceLog {
-			Trace.SetOutput(multiWriter)
-		} else {
-			Trace.SetOutput(ioutil.Discard)
-		}
-		Info.SetOutput(multiWriter)
-		Warning.SetOutput(multiWriter)
-
-		multiWriter = io.MultiWriter(sysLog, os.Stderr)
-		Error.SetOutput(multiWriter)
-	}
+	sysLog := InitLogger(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
 	defer sysLog.Close()
 
 	// read config
@@ -166,18 +148,27 @@ func main() {
 			waitGlobal.Done()
 
 		} else {
-			waitGlobal.Add(1)
-			go func(tableInfo Table) {
+			if enableParallel {
+				waitGlobal.Add(1)
+				go func(tableInfo Table) {
 
+					startTime := time.Now()
+
+					report := migrationTable(tableInfo)
+
+					duration := time.Since(startTime)
+					reportTable(tableInfo, &report, duration)
+
+					waitGlobal.Done()
+				}(tableInfo)
+			} else {
 				startTime := time.Now()
 
 				report := migrationTable(tableInfo)
 
 				duration := time.Since(startTime)
 				reportTable(tableInfo, &report, duration)
-
-				waitGlobal.Done()
-			}(tableInfo)
+			}
 		}
 	}
 

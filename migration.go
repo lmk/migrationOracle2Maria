@@ -118,7 +118,7 @@ RETRY:
 				tableState.retryCount.Add(1)
 			}
 
-			Trace.Printf("%s, end retry child-thread", tableName)
+			Trace.Printf("%s, end retry child-thread %s", tableName, getKrString(msg))
 
 			continue
 
@@ -158,6 +158,7 @@ func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tab
 
 	// msgQ를 읽어서
 	for msg := range insertQ {
+		//Trace.Printf("%s %03d, readQ, %s", tableInfo.TargetName, threadIndex, getKrString(msg))
 		_, err := tx.Exec(msg)
 		if err != nil {
 			retryQ <- msg
