@@ -27,25 +27,25 @@ func (r *Report) Sum(list []Report) {
 	}
 }
 
-func printReport(tableName string, status *Report, duration time.Duration) {
+func printReport(tableName string, report *Report, duration time.Duration) {
 
 	// 로그 출력
 	Info.Printf("%s, Report Oracle:%d, Maria:%d, broken:%d, dbError:%d, batch:%d, retry:%d, duration:%v",
 		tableName,
-		status.oracleRow,
-		status.mariaRow,
-		status.brokenCount,
-		status.dbErrorCount,
-		status.batchCount,
-		status.retryCount,
+		report.oracleRow,
+		report.mariaRow,
+		report.brokenCount,
+		report.dbErrorCount,
+		report.batchCount,
+		report.retryCount,
 		duration)
 
-	if status.oracleRow != (status.mariaRow + status.brokenCount + status.dbErrorCount) {
-		Error.Printf("%s, miss count oracle", tableName)
+	if report.oracleRow != (report.mariaRow + report.brokenCount + report.dbErrorCount) {
+		Error.Printf("%s, Report miss count oracle", tableName)
 	}
 
-	if status.mariaRow != (status.batchCount + status.retryCount) {
-		Error.Printf("%s, miss count maria", tableName)
+	if report.mariaRow != (report.batchCount + report.retryCount) {
+		Error.Printf("%s, Report miss count maria", tableName)
 	}
 }
 

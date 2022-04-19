@@ -24,6 +24,16 @@ type Logger struct {
 	*log.Logger
 }
 
+func openFile(filename string, flag int) *os.File {
+
+	logFile, err := os.OpenFile(filename, flag, 0666)
+	if err != nil {
+		panic(err)
+	}
+
+	return logFile
+}
+
 // InitLogger 로거 초기화
 func InitLogger(
 	traceHandle io.Writer,
@@ -68,10 +78,16 @@ func InitLogger(
 	return sysLog
 }
 
-func setExceptLogFile(brokenLog io.Writer, dbErrLog io.Writer) {
+func setExceptLogFile(brokenLogFile string, dbErrLogFile string) (*os.File, *os.File) {
+
+	brokenLog := openFile(brokenLogFile, os.O_CREATE|os.O_TRUNC|os.O_RDWR)
+	dbErrLog := openFile(dbErrLogFile, os.O_CREATE|os.O_TRUNC|os.O_RDWR)
+
 	BrokenLog = log.New(brokenLog, "", 0)
 
 	DbErrLog = log.New(dbErrLog, "", 0)
+
+	return brokenLog, dbErrLog
 }
 
 func getKrString(msg string) string {

@@ -94,22 +94,21 @@ func RetryInsert(retryQ <-chan string, tableName string, tableState *TableStatus
 
 	Trace.Printf("%s, start retry thread", tableName)
 
-	maria := ConnectMaria()
+	maria := ConnectMaria(true)
 	defer maria.Close()
 
 RETRY:
 	for {
 		select {
 		case msg := <-retryQ:
-
 			Trace.Printf("%s, start retry child-thread %s", tableName, getKrString(msg))
 
 			err := execQuery(maria, msg)
 
 			if err != nil {
-				logMsg := fmt.Sprintf("%s: %s", err, msg)
-				Error.Println(getKrString(logMsg))
-				DbErrLog.Println(getKrString(msg + ";"))
+				logMsg := fmt.Sprintf("%s: %s", err, getKrString(msg))
+				Error.Println(logMsg)
+				DbErrLog.Println(msg + ";")
 
 				tableState.dbErrorCount.Add(1)
 			} else {
@@ -137,20 +136,25 @@ RETRY:
 	tableState.wait.Done()
 }
 
+func pushRetry(threadIndex int, retryQ chan<- string, tableName string, list []string) {
+	for _, msg := range list {
+		if len(msg) > 0 {
+			retryQ <- msg
+			Trace.Printf("%s, %3d, push retryQ, %s", tableName, threadIndex, getKrString(msg))
+		}
+	}
+}
+
 // newInsert mariadb batch insert
 func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tableInfo Table, tableState *TableStatus) {
 
 	Trace.Printf("%s, start thread %3d", tableInfo.TargetName, threadIndex)
 
-	maria := ConnectMaria()
+	maria := ConnectMaria(false)
 	defer maria.Close()
 
 	// 트랜잭션 시작
-	count := 0
-	tx, err := maria.Begin()
-	if err != nil {
-		Error.Fatal(err)
-	}
+	tx := startTransaction(maria)
 	defer tx.Rollback()
 
 	// 트랜잭션 실패시 재시도 쿼리를 저장할 버퍼
@@ -159,69 +163,68 @@ func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tab
 	// msgQ를 읽어서
 	for msg := range insertQ {
 		//Trace.Printf("%s %03d, readQ, %s", tableInfo.TargetName, threadIndex, getKrString(msg))
+
+		buf = append(buf, msg)
+
 		_, err := tx.Exec(msg)
 		if err != nil {
-			retryQ <- msg
-			Trace.Printf("%s, %3d, push retryQ, %s, %s", tableInfo.TargetName, threadIndex, err, getKrString(msg))
-			continue
-		} else {
-			buf = append(buf, msg)
-			count++
+
+			Warning.Printf("%s, %3d, fail tx.Exec %s, %s", tableInfo.TargetName, threadIndex, err, getKrString(msg))
+
+			err = tx.Rollback()
+			if err != nil {
+				Error.Fatalf("%s, %3d, fail tx.rollback %s", tableInfo.TargetName, threadIndex, err)
+			}
+
+			tx = startTransaction(maria)
+
+			pushRetry(threadIndex, retryQ, tableInfo.TargetName, buf)
+
+			buf = []string{}
+
 		}
 
 		// FetchSize 만큼
-		if count >= tableInfo.FetchSize {
+		if len(buf) >= tableInfo.FetchSize {
 			//commit
 			err = tx.Commit()
 			if err != nil {
-				Warning.Printf("%s, fail tx.commit %s", tableInfo.TargetName, err)
-				for _, m := range buf {
-					if len(m) > 0 {
-						retryQ <- m
-						Trace.Printf("%s, %3d, push retryQ, %s", tableInfo.TargetName, threadIndex, getKrString(msg))
-					}
-				}
+				Warning.Printf("%s, %3d, fail tx.commit %s", tableInfo.TargetName, threadIndex, err)
 
 				err = tx.Rollback()
 				if err != nil {
 					Error.Fatalf("%s, %3d, fail tx.rollback %s", tableInfo.TargetName, threadIndex, err)
 				}
 
-				count = 0
+				pushRetry(threadIndex, retryQ, tableInfo.TargetName, buf)
 			}
+
+			tx = startTransaction(maria)
+
+			tableState.batchCount.Add(int64(len(buf)))
 
 			buf = []string{}
 
-			tx, err = maria.Begin()
-			if err != nil {
-				Error.Fatal(err)
-			}
-
-			tableState.batchCount.Add(int64(count))
-			count = 0
 			//Info.Printf("thread %d, commit %s", threadIndex, tableInfo.Name)
 		}
 	}
 
 	// 남은 데이터 commit
-	if count > 0 {
+	if len(buf) > 0 {
 		//commit
-		err = tx.Commit()
+		err := tx.Commit()
 		if err != nil {
-			Warning.Printf("fail tx %s", err)
-			for _, msg := range buf {
-				if len(msg) > 0 {
-					retryQ <- msg
-					Trace.Printf("%s, %3d, push retryQ, %s", tableInfo.TargetName, threadIndex, getKrString(msg))
-				}
-			}
+			Warning.Printf("%s, %3d, fail tx.commit %s", tableInfo.TargetName, threadIndex, err)
 
 			err = tx.Rollback()
 			if err != nil {
 				Error.Fatalf("%s, %3d, fail tx.rollback %s", tableInfo.TargetName, threadIndex, err)
 			}
+
+			pushRetry(threadIndex, retryQ, tableInfo.TargetName, buf)
+
 		} else {
-			tableState.batchCount.Add(int64(count))
+			tableState.batchCount.Add(int64(len(buf)))
 		}
 	}
 
@@ -267,6 +270,7 @@ func makeSelectQuery(tableInfo Table, colInfo map[string]ColInfo) string {
 func newSelect(insertQ chan<- string, tableInfo Table, status *TableStatus) {
 
 	Trace.Printf("%s, start select thread", tableInfo.SourceName)
+	count := 0
 
 	ora := ConnectOracle()
 	defer ora.Close()
@@ -311,6 +315,7 @@ func newSelect(insertQ chan<- string, tableInfo Table, status *TableStatus) {
 		if conf.CheckEucKr && ContainsNoEucKr(query) {
 			BrokenLog.Println(getKrString(query + ";"))
 			status.brokenCount.Add(1)
+			count++
 		} else {
 			insertQ <- query
 		}
@@ -318,7 +323,7 @@ func newSelect(insertQ chan<- string, tableInfo Table, status *TableStatus) {
 
 	close(insertQ)
 
-	Trace.Printf("%s, end select thread", tableInfo.SourceName)
+	Trace.Printf("%s, end select thread %d", tableInfo.SourceName, count)
 	status.wait.Done()
 }
 

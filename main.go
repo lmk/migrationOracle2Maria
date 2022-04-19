@@ -14,7 +14,7 @@ var conf AppConfig // yamlFile에서 읽은 설정
 var yamlFile string       // args 에서 읽은 .yml 파일명
 var isNoWriteLogFile bool // args 에서 읽은 로그 파일로 쓸지 여부
 var enableTraceLog bool   // args 에서 Trace 로그를 사용할지 여부
-var enableParallel bool   // table별도 병력 처리할지 여부
+var enablesequential bool // table별로 순차 처리할지 여부
 
 var waitGlobal sync.WaitGroup
 
@@ -23,21 +23,11 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-func openFile(filename string, flag int) *os.File {
-
-	logFile, err := os.OpenFile(filename, flag, 0666)
-	if err != nil {
-		panic(err)
-	}
-
-	return logFile
-}
-
 func init() {
 	flag.StringVar(&yamlFile, "config", "config.yml", "config yaml file name(.yml)")
 	flag.BoolVar(&isNoWriteLogFile, "nolog", false, "if true, NO file log is written. only stdio")
 	flag.BoolVar(&enableTraceLog, "trace", false, "if true, enable trace log")
-	flag.BoolVar(&enableParallel, "parallel", false, "if true, parallel processing by table")
+	flag.BoolVar(&enablesequential, "parallel", false, "if true, enablesequential processing by table")
 
 	flag.Usage = usage
 }
@@ -75,21 +65,19 @@ func main() {
 
 	Info.Printf("%+v\n", makePretty(&conf))
 
-	// euckr아닌 sql
-	brokenLog := openFile(conf.BrokenLog, os.O_CREATE|os.O_TRUNC|os.O_RDWR)
-	defer brokenLog.Close()
-
-	// db 에러가 난 경우 sql
-	dbErrLog := openFile(conf.DbErrLog, os.O_CREATE|os.O_TRUNC|os.O_RDWR)
-	defer dbErrLog.Close()
-
-	setExceptLogFile(brokenLog, dbErrLog)
+	brokenLog, dbErrLog := setExceptLogFile(conf.BrokenLog, conf.DbErrLog)
+	defer func() {
+		brokenLog.WriteString("commit;\n")
+		dbErrLog.WriteString("commit;\n")
+		brokenLog.Close()
+		dbErrLog.Close()
+	}()
 
 	startTime := time.Now()
 
 	// 마이그레이션전 쿼리
 	for _, query := range conf.Maria.BeforeQuerys {
-		maria := ConnectMaria()
+		maria := ConnectMaria(true)
 		defer maria.Close()
 		err := execQuery(maria, query)
 		if err != nil {
@@ -113,7 +101,7 @@ func main() {
 			tableList := []Table{}
 			reportList := []Report{}
 
-			// 한번만 truncate 한다.
+			// src 테이블이 복수개인 경우 한번만 truncate 한다.
 			if strings.EqualFold(tableInfo.BeforeTruncate, "true") {
 				truncateTable(tableInfo.TargetName)
 				Info.Printf("%s, truncate table", tableInfo.TargetName)
@@ -148,7 +136,17 @@ func main() {
 			waitGlobal.Done()
 
 		} else {
-			if enableParallel {
+
+			if enablesequential {
+				// 테이블별 순차 처리
+				startTime := time.Now()
+
+				report := migrationTable(tableInfo)
+
+				duration := time.Since(startTime)
+				reportTable(tableInfo, &report, duration)
+			} else {
+				// 테이블별 병렬 처리
 				waitGlobal.Add(1)
 				go func(tableInfo Table) {
 
@@ -161,13 +159,6 @@ func main() {
 
 					waitGlobal.Done()
 				}(tableInfo)
-			} else {
-				startTime := time.Now()
-
-				report := migrationTable(tableInfo)
-
-				duration := time.Since(startTime)
-				reportTable(tableInfo, &report, duration)
 			}
 		}
 	}
@@ -176,7 +167,7 @@ func main() {
 
 	// 마이그레이션후 쿼리
 	for _, query := range conf.Maria.AfterQuerys {
-		maria := ConnectMaria()
+		maria := ConnectMaria(true)
 		defer maria.Close()
 		err := execQuery(maria, query)
 		if err != nil {

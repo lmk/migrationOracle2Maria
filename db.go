@@ -2,9 +2,8 @@ package main
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
-	"strings"
+	"time"
 )
 
 type ColInfo struct {
@@ -35,8 +34,15 @@ func getColumnInfo(ora *sql.DB, tableName string) (map[string]ColInfo, error) {
 	return colInfoList, nil
 }
 
-func ConnectMaria() *sql.DB {
-	maria, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?autocommit=true", conf.Maria.User, conf.Maria.Password, conf.Maria.Ip, conf.Maria.Port, conf.Maria.Database))
+func ConnectMaria(autoCommit bool) *sql.DB {
+	connStr := ""
+	if autoCommit {
+		connStr = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?autocommit=true", conf.Maria.User, conf.Maria.Password, conf.Maria.Ip, conf.Maria.Port, conf.Maria.Database)
+	} else {
+		connStr = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", conf.Maria.User, conf.Maria.Password, conf.Maria.Ip, conf.Maria.Port, conf.Maria.Database)
+	}
+
+	maria, err := sql.Open("mysql", connStr)
 	if err != nil {
 		Error.Fatal(err)
 	}
@@ -56,41 +62,21 @@ func ConnectOracle() *sql.DB {
 // truncateTable mariadb 테이블을 truncate 한다.
 func truncateTable(tableName string) {
 
-	maria := ConnectMaria()
+	maria := ConnectMaria(true)
 	defer maria.Close()
 
 	_, err := maria.Exec(fmt.Sprintf("truncate table %s", tableName))
 	if err != nil {
 		Error.Fatal(err)
 	}
+	time.Sleep(5 * time.Second)
 }
 
 func execQuery(db *sql.DB, query string) error {
-	result, err := db.Exec(query)
+	_, err := db.Exec(query)
 
 	if err != nil {
 		return err
-	}
-
-	//n, err := result.RowsAffected()
-	// if err != nil {
-	// 	return err
-	// }
-
-	// if n <= 0 {
-	// 	return errors.New("rowsaffected is 0")
-	// }
-
-	// mariadb 에서 insert 문은 LastInsertId()에 성공 결과가 담긴다.
-	if strings.HasPrefix(strings.ToLower(strings.Trim(query, " \n\r\t")), "insert") {
-		l, err := result.LastInsertId()
-		if err != nil {
-			return err
-		}
-
-		if l <= 0 {
-			return errors.New("lastinsertid is 0")
-		}
 	}
 
 	return nil
@@ -114,8 +100,17 @@ func getOracleCount(tableName string) int64 {
 }
 
 func getMairaCount(tableName string) int64 {
-	maria := ConnectMaria()
+	maria := ConnectMaria(true)
 	defer maria.Close()
 
 	return getDbCount(maria, tableName)
+}
+
+func startTransaction(conn *sql.DB) *sql.Tx {
+	tx, err := conn.Begin()
+	if err != nil {
+		Error.Fatal(conn)
+	}
+
+	return tx
 }
