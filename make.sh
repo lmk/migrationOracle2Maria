@@ -7,5 +7,5 @@ REVERSION=`git rev-list --count --first-parent HEAD`
 VERSION="$VERSION $REVERSION.$DESCRIBE"
 BUILDDT=`echo $(date +%Y)-$(date +%m)-$(date +%d) $(date +%H):$(date +%M):$(date +%S)`
 
-go build -ldflags "-X 'main.VERSION=${VERSION}' -X 'main.BUILDDT=${BUILDDT}'" -o migrationOracle2Maria .
+go build -ldflags "-X 'main.VERSION=${VERSION}' -X 'main.BUILDDT=${BUILDDT}'" -o ${TARGET} .
 ./$TARGET -v
