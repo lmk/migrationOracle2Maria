@@ -54,6 +54,18 @@ type Table struct {
 	ThreadCount    int      `yaml:"thread_count"`
 }
 
+// isSkipField fieldName이 SkipColumns 포함되어 있는지 체크한다.
+func (t *Table) isSkipField(fieldName string) bool {
+
+	for _, f := range t.SkipColumns {
+		if fieldName == f {
+			return true
+		}
+	}
+
+	return false
+}
+
 // checkRequired 필수값을 체크하고, 기본값을 셋팅한다.
 func (conf *AppConfig) checkRequired() error {
 

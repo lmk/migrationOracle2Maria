@@ -16,8 +16,6 @@ var isNoWriteLogFile bool // args 에서 읽은 로그 파일로 쓸지 여부
 var enableTraceLog bool   // args 에서 Trace 로그를 사용할지 여부
 var enableSequential bool // table별로 순차 처리할지 여부
 
-var waitGlobal sync.WaitGroup
-
 func usage() {
 	fmt.Printf("Usage: %s -config=\"yaml file\" [OPTIONS] \n", os.Args[0])
 	flag.PrintDefaults()
@@ -43,13 +41,7 @@ func getConfigName() string {
 	return yamlFile
 }
 
-func main() {
-
-	flag.Parse()
-
-	// setting log
-	sysLog := InitLogger(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
-	defer sysLog.Close()
+func initConf() {
 
 	// read config
 	err := conf.readConfig(getConfigName())
@@ -64,119 +56,73 @@ func main() {
 	}
 
 	Info.Printf("%+v\n", makePretty(&conf))
+}
+
+func main() {
+
+	flag.Parse()
+
+	// setting log
+	sysLog := InitLogger(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
+
+	initConf()
 
 	brokenLog, dbErrLog := setExceptLogFile(conf.BrokenLog, conf.DbErrLog)
+
+	// 파일들을 닫는다.
 	defer func() {
 		brokenLog.WriteString("commit;\n")
 		dbErrLog.WriteString("commit;\n")
 		brokenLog.Close()
 		dbErrLog.Close()
+		if sysLog != nil {
+			sysLog.Close()
+		}
 	}()
 
-	startTime := time.Now()
+	startTimeAll := time.Now()
 
 	// 마이그레이션전 쿼리
 	for _, query := range conf.Maria.BeforeQuerys {
-		maria := ConnectMaria(true)
-		defer maria.Close()
-		err := execQuery(maria, query)
-		if err != nil {
-			Error.Fatal(err.Error() + "," + query)
-		}
-		maria.Close()
+		execNewQuery(query)
 	}
 
 	// 마이그레이션
+	var wait sync.WaitGroup
+
 	for _, tableInfo := range conf.Tables {
 
 		if strings.Contains(tableInfo.SourceName, "%") {
 
 			// src 테이블이 복수개인 경우
-			waitGlobal.Add(1)
-
-			startTime := time.Now()
-
-			var waitGroup sync.WaitGroup
-
-			tableList := []Table{}
-			reportList := []Report{}
-
-			// src 테이블이 복수개인 경우 한번만 truncate 한다.
-			if strings.EqualFold(tableInfo.BeforeTruncate, "true") {
-				truncateTable(tableInfo.TargetName)
-				Info.Printf("%s, truncate table", tableInfo.TargetName)
-				tableInfo.BeforeTruncate = "false"
-			}
-
-			fmtString := tableInfo.SourceName
-
-			for i := tableInfo.StartIndex; i <= tableInfo.EndIndex; i++ {
-
-				tableInfo.SourceName = fmt.Sprintf(fmtString, i)
-				if strings.Contains(tableInfo.SourceName, "!") {
-					Error.Fatalf("Invalid SourceName: %s", fmtString)
-				}
-
-				tableList = append(tableList, tableInfo)
-
-				waitGroup.Add(1)
-				go func(tableInfo Table) {
-					report := migrationTable(tableInfo)
-					reportList = append(reportList, report)
-					waitGroup.Done()
-				}(tableInfo)
-			}
-
-			// group thread가 모두 끝나야 report를 한다.
-			waitGroup.Wait()
-
-			duration := time.Since(startTime)
-			reportMultiTables(tableList, reportList, duration)
-
-			waitGlobal.Done()
+			// 복수개는 무조건 병렬 처리
+			migrationAndReportMulti(tableInfo)
 
 		} else {
 
 			if enableSequential {
 				// 테이블별 순차 처리
-				startTime := time.Now()
-
-				report := migrationTable(tableInfo)
-
-				duration := time.Since(startTime)
-				reportTable(tableInfo, &report, duration)
+				migrationAndReport(tableInfo)
 			} else {
 				// 테이블별 병렬 처리
-				waitGlobal.Add(1)
+				wait.Add(1)
 				go func(tableInfo Table) {
-
-					startTime := time.Now()
-
-					report := migrationTable(tableInfo)
-
-					duration := time.Since(startTime)
-					reportTable(tableInfo, &report, duration)
-
-					waitGlobal.Done()
+					migrationAndReport(tableInfo)
+					wait.Done()
 				}(tableInfo)
 			}
 		}
 	}
 
-	waitGlobal.Wait()
+	// 모든 thread가 끝나길 대기
+	wait.Wait()
 
 	// 마이그레이션후 쿼리
 	for _, query := range conf.Maria.AfterQuerys {
-		maria := ConnectMaria(true)
-		defer maria.Close()
-		err := execQuery(maria, query)
-		if err != nil {
-			Error.Fatal(err.Error() + "," + query)
-		}
-		Info.Printf("%s", query)
+		execNewQuery(query)
 	}
 
-	duration := time.Since(startTime)
+	duration := time.Since(startTimeAll)
 	Info.Printf("%d Tables Duration %v", len(conf.Tables), duration)
 
 	Info.Println("End Job.")

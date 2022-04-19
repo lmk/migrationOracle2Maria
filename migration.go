@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -35,7 +36,7 @@ func makeFieldName(colNames []string) string {
 	return b.String()
 }
 
-// makeInsertQuery
+// makeInsertQuery 마리아DB용 insert 쿼리를 만든다.
 func makeInsertQuery(table Table, values []interface{}, colNames []string, colInfo map[string]ColInfo) string {
 
 	// 예외 컬럼
@@ -89,7 +90,8 @@ func ContainsNoEucKr(query string) bool {
 	return query != string(msgUtf8)
 }
 
-// RetryInsert
+// RetryInsert retryQ를 읽어서 건별로 쿼리를 실행한다.
+// 실패하면 별도 db 실패 로그 파일에 남긴다.
 func RetryInsert(retryQ <-chan string, tableName string, tableState *TableStatus) {
 
 	Trace.Printf("%s, start retry thread", tableName)
@@ -136,6 +138,7 @@ RETRY:
 	tableState.wait.Done()
 }
 
+// pushRetry list 전체를 retryQ에 넘긴다.
 func pushRetry(threadIndex int, retryQ chan<- string, tableName string, list []string) {
 	for _, msg := range list {
 		if len(msg) > 0 {
@@ -146,6 +149,7 @@ func pushRetry(threadIndex int, retryQ chan<- string, tableName string, list []s
 }
 
 // newInsert mariadb batch insert
+// FetchSize당 트랜잭션 처리하고, 오류 발생시 rollback 하고, retryQ에 넘긴다.
 func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tableInfo Table, tableState *TableStatus) {
 
 	Trace.Printf("%s, start thread %3d", tableInfo.TargetName, threadIndex)
@@ -234,17 +238,9 @@ func newInsert(threadIndex int, insertQ <-chan string, retryQ chan<- string, tab
 	tableState.wait.Done()
 }
 
-func (t *Table) isSkipField(fieldName string) bool {
-
-	for _, f := range t.SkipColumns {
-		if fieldName == f {
-			return true
-		}
-	}
-
-	return false
-}
-
+// makeSelectQuery 오라클 select 쿼리문을 만든다.
+// DATE형은 문자열로 변경한다.
+// RAW형은 hex 문자열로 변경한다.
 func makeSelectQuery(tableInfo Table, colInfo map[string]ColInfo) string {
 
 	fields := []string{}
@@ -267,6 +263,7 @@ func makeSelectQuery(tableInfo Table, colInfo map[string]ColInfo) string {
 	return fmt.Sprintf("select %s from %s", strings.Join(fields, ","), tableInfo.SourceName)
 }
 
+// newSelect 오라클에서 select 해서 마리아용 insert 문을 만들어서, insertQ에 넣는다.
 func newSelect(insertQ chan<- string, tableInfo Table, status *TableStatus) {
 
 	Trace.Printf("%s, start select thread", tableInfo.SourceName)
@@ -327,14 +324,10 @@ func newSelect(insertQ chan<- string, tableInfo Table, status *TableStatus) {
 	status.wait.Done()
 }
 
+// migrationTable 테이블 하나를 마이그레이션 한다.
 func migrationTable(tableInfo Table) Report {
 
 	var status TableStatus
-
-	if strings.EqualFold(tableInfo.BeforeTruncate, "true") {
-		truncateTable(tableInfo.TargetName)
-		Info.Printf("%s, truncate table", tableInfo.TargetName)
-	}
 
 	insertQ := make(chan string, 1000)
 	retryQ := make(chan string, 1000)
@@ -363,4 +356,62 @@ func migrationTable(tableInfo Table) Report {
 	close(retryQ)
 
 	return status.ToReport()
+}
+
+// migrationAndReport 테이블 하나를 마이그레이션 하고 리포팅 한다.
+func migrationAndReport(tableInfo Table) {
+	startTime := time.Now()
+
+	if strings.EqualFold(tableInfo.BeforeTruncate, "true") {
+		truncateTable(tableInfo.TargetName)
+		Info.Printf("%s, truncate table", tableInfo.TargetName)
+	}
+
+	report := migrationTable(tableInfo)
+
+	duration := time.Since(startTime)
+	reportTable(tableInfo, &report, duration)
+}
+
+// migrationAndReportMulti src 테이블이 복수개인 경우,
+// 테이블 여러개를 마이그레이션 하고 리포팅 한다.
+func migrationAndReportMulti(tableInfo Table) {
+
+	startTime := time.Now()
+
+	var waitGroup sync.WaitGroup
+
+	tableList := []Table{}
+	reportList := []Report{}
+
+	// src 테이블이 복수개인 경우 한번만 truncate 한다.
+	if strings.EqualFold(tableInfo.BeforeTruncate, "true") {
+		truncateTable(tableInfo.TargetName)
+		Info.Printf("%s, truncate table", tableInfo.TargetName)
+	}
+
+	fmtString := tableInfo.SourceName
+
+	for i := tableInfo.StartIndex; i <= tableInfo.EndIndex; i++ {
+
+		tableInfo.SourceName = fmt.Sprintf(fmtString, i)
+		if strings.Contains(tableInfo.SourceName, "!") {
+			Error.Fatalf("Invalid SourceName: %s", fmtString)
+		}
+
+		tableList = append(tableList, tableInfo)
+
+		waitGroup.Add(1)
+		go func(tableInfo Table) {
+			report := migrationTable(tableInfo)
+			reportList = append(reportList, report)
+			waitGroup.Done()
+		}(tableInfo)
+	}
+
+	// group thread가 모두 끝나야 report를 한다.
+	waitGroup.Wait()
+
+	duration := time.Since(startTime)
+	reportMultiTables(tableList, reportList, duration)
 }

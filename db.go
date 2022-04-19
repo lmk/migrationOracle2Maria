@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"time"
 )
 
 type ColInfo struct {
@@ -59,7 +58,8 @@ func ConnectOracle() *sql.DB {
 	return ora
 }
 
-// truncateTable mariadb 테이블을 truncate 한다.
+// truncateTable 새로 maira connection을 맺고, mariadb 테이블을 truncate 한다.
+// 실패하면, Error 출력후 종료한다.
 func truncateTable(tableName string) {
 
 	maria := ConnectMaria(true)
@@ -69,7 +69,6 @@ func truncateTable(tableName string) {
 	if err != nil {
 		Error.Fatal(err)
 	}
-	time.Sleep(5 * time.Second)
 }
 
 func execQuery(db *sql.DB, query string) error {
@@ -80,6 +79,19 @@ func execQuery(db *sql.DB, query string) error {
 	}
 
 	return nil
+}
+
+// execNewQuery 새로 maira connection을 맺고, 쿼리를 날린다.
+// 실패하면, Error 출력후 종료한다.
+func execNewQuery(query string) {
+
+	maria := ConnectMaria(true)
+	defer maria.Close()
+
+	err := execQuery(maria, query)
+	if err != nil {
+		Error.Fatal(err.Error() + "," + query)
+	}
 }
 
 func getDbCount(conn *sql.DB, tableName string) int64 {
