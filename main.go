@@ -14,7 +14,7 @@ var conf AppConfig // yamlFile에서 읽은 설정
 var yamlFile string       // args 에서 읽은 .yml 파일명
 var isNoWriteLogFile bool // args 에서 읽은 로그 파일로 쓸지 여부
 var enableTraceLog bool   // args 에서 Trace 로그를 사용할지 여부
-var enablesequential bool // table별로 순차 처리할지 여부
+var enableSequential bool // table별로 순차 처리할지 여부
 
 var waitGlobal sync.WaitGroup
 
@@ -27,7 +27,7 @@ func init() {
 	flag.StringVar(&yamlFile, "config", "config.yml", "config yaml file name(.yml)")
 	flag.BoolVar(&isNoWriteLogFile, "nolog", false, "if true, NO file log is written. only stdio")
 	flag.BoolVar(&enableTraceLog, "trace", false, "if true, enable trace log")
-	flag.BoolVar(&enablesequential, "parallel", false, "if true, enablesequential processing by table")
+	flag.BoolVar(&enableSequential, "sequential", false, "if true, enable sequential processing by table")
 
 	flag.Usage = usage
 }
@@ -137,7 +137,7 @@ func main() {
 
 		} else {
 
-			if enablesequential {
+			if enableSequential {
 				// 테이블별 순차 처리
 				startTime := time.Now()
 
