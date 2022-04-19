@@ -60,6 +60,7 @@ func initConf() {
 
 func main() {
 
+	showVersion()
 	flag.Parse()
 
 	// setting log
