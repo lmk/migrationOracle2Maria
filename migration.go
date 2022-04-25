@@ -269,6 +269,8 @@ func newSelect(insertQ chan<- string, tableInfo Table, status *TableStatus) {
 	Trace.Printf("%s, start select thread", tableInfo.SourceName)
 	count := 0
 
+	tableInfo.SourceName = strings.ToUpper(tableInfo.SourceName)
+
 	ora := ConnectOracle()
 	defer ora.Close()
 
@@ -277,19 +279,23 @@ func newSelect(insertQ chan<- string, tableInfo Table, status *TableStatus) {
 	if err != nil {
 		Error.Fatal(err)
 	}
+
+	if len(colInfo) <= 0 {
+		Error.Fatal(fmt.Sprintf("not exists table %s", tableInfo.SourceName))
+	}
 	//Info.Printf("%s Columns: %v", tableInfo.Name, colInfo)
 
 	// 전체 데이터 조회
 	query := makeSelectQuery(tableInfo, colInfo)
 	rows, err := ora.Query(query)
 	if err != nil {
-		Error.Fatal(err)
+		Error.Fatal(fmt.Sprintf("%v, %s", err, query))
 	}
 	defer rows.Close()
 
 	columns, err := rows.Columns()
 	if err != nil {
-		Error.Fatal(err)
+		Error.Fatal(fmt.Sprintf("%v, %s", err, query))
 	}
 	defer rows.Close()
 
