@@ -39,12 +39,6 @@ func makeFieldName(colNames []string) string {
 // makeInsertQuery 마리아DB용 insert 쿼리를 만든다.
 func makeInsertQuery(table Table, values []interface{}, colNames []string, colInfo map[string]ColInfo) string {
 
-	// 예외 컬럼
-	skipList := make(map[string]int)
-	for _, skipCol := range table.SkipColumns {
-		skipList[skipCol] = 1
-	}
-
 	var textType = map[string]int{
 		"LONG": 1, "CHAR": 1, "CLOB": 1, "VARCHAR2": 1,
 	}
