@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"strings"
 
@@ -109,12 +110,12 @@ func (conf *AppConfig) readConfig(fileName string) error {
 
 	buf, err := ioutil.ReadFile(fileName)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot read config file %s, ReadFile: %v", fileName, err)
 	}
 
 	err = yaml.Unmarshal(buf, conf)
 	if err != nil {
-		Info.Fatalf("Unmarshal: %v", err)
+		return fmt.Errorf("invaild config file %s, Unmarshal: %v", fileName, err)
 	}
 
 	return nil
