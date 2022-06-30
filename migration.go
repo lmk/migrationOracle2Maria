@@ -254,7 +254,13 @@ func makeSelectQuery(tableInfo Table, colInfo map[string]ColInfo) string {
 		}
 	}
 
-	return fmt.Sprintf("select %s from %s", strings.Join(fields, ","), tableInfo.SourceName)
+	query := fmt.Sprintf("select %s from %s", strings.Join(fields, ","), tableInfo.SourceName)
+
+	if tableInfo.Where != "" {
+		query += " where " + tableInfo.Where
+	}
+
+	return query
 }
 
 // newSelect 오라클에서 select 해서 마리아용 insert 문을 만들어서, insertQ에 넣는다.

@@ -53,6 +53,7 @@ type Table struct {
 	BeforeTruncate string   `yaml:"before_truncate"`
 	SkipColumns    []string `yaml:"skip_columns"`
 	ThreadCount    int      `yaml:"thread_count"`
+	Where          string   `yaml:"where"`
 }
 
 // isSkipField fieldName이 SkipColumns 포함되어 있는지 체크한다.

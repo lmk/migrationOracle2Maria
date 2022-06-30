@@ -94,9 +94,13 @@ func execNewQuery(query string) {
 	}
 }
 
-func getDbCount(conn *sql.DB, tableName string) int64 {
+func getDbCount(conn *sql.DB, tableName string, where string) int64 {
 	var count int64
-	err := conn.QueryRow("select count(*) from " + tableName).Scan(&count)
+	query := "select count(*) from " + tableName
+	if where != "" {
+		query += " where " + where
+	}
+	err := conn.QueryRow(query).Scan(&count)
 	if err != nil {
 		Error.Panic(err)
 	}
@@ -104,18 +108,18 @@ func getDbCount(conn *sql.DB, tableName string) int64 {
 	return count
 }
 
-func getOracleCount(tableName string) int64 {
+func getOracleCount(tableName string, where string) int64 {
 	ora := ConnectOracle()
 	defer ora.Close()
 
-	return getDbCount(ora, tableName)
+	return getDbCount(ora, tableName, where)
 }
 
 func getMairaCount(tableName string) int64 {
 	maria := ConnectMaria(true)
 	defer maria.Close()
 
-	return getDbCount(maria, tableName)
+	return getDbCount(maria, tableName, "")
 }
 
 func startTransaction(conn *sql.DB) *sql.Tx {

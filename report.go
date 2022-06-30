@@ -51,7 +51,7 @@ func printReport(tableName string, report *Report, duration time.Duration) {
 
 func reportTable(tableInfo Table, report *Report, duration time.Duration) {
 
-	report.oracleRow = getOracleCount(tableInfo.SourceName)
+	report.oracleRow = getOracleCount(tableInfo.SourceName, tableInfo.Where)
 
 	report.mariaRow = getMairaCount(tableInfo.SourceName)
 
@@ -69,7 +69,7 @@ func reportMultiTables(tableInfo []Table, reports []Report, duration time.Durati
 
 	var sumOracle int64
 	for _, info := range tableInfo {
-		sumOracle += getDbCount(ora, info.SourceName)
+		sumOracle += getDbCount(ora, info.SourceName, "")
 	}
 
 	report.oracleRow = sumOracle
