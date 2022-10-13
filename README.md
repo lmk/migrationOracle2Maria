@@ -50,7 +50,7 @@
       before_truncate: true
   ```
 
-### Usage
+## Usage
 
 ```bash
 $ ./migrationOracle2Maria --help
@@ -65,7 +65,7 @@ Usage: ./migrationOracle2Maria -config="yaml file" [OPTIONS]
         if true, enable trace log
 ```
 
-### yaml example
+## yaml example
 
 ```yaml
 broken_log: "broken.sql"
@@ -111,7 +111,7 @@ tables:
    thread_count: 10
 ```
 
-### report 
+## report 
 
 - 테이블별 결과가 출력되고, 전체 마이그레이션이 종료되면 몇 개 테이블이 얼마나 걸렸는지 출력됩니다.
 
@@ -164,9 +164,9 @@ insert into TEST_TABLE_E (`SEQ`,`KEY`,`VALUE`,`LASTDATE`) values ('172649','key1
 commit;
 ```
 
-### code review
+## code review
 
-#### 구조
+### 구조
 
 - select를 하는 go 루틴을 하나 만들고, Oracle에서 select 하고, MariaDB insert 문을 만들어서 채널로 보냅니다.
 
@@ -195,7 +195,7 @@ commit;
 
 > commit이 오래 걸리기 때문에 insert를 모아서 트랜젝션 처리하고 go 루틴으로 병렬 처리합니다. retry는 안정적인 처리를 위해, 단일 스레드에서 insert 하나씩 commit 합니다.   
 
-##### `newSelect`
+### `newSelect`
 
 - Oracle 에서 컬럼명, 자료형, 길이를 조회 가져옵니다.
 
@@ -239,7 +239,7 @@ commit;
 		}
 ```
 
-##### `newInsert`
+### `newInsert`
 
 - insert 채널을 읽어서 실행하고, FetchSize만큼씩 commit 합니다.
 
@@ -258,7 +258,7 @@ commit;
 			err = tx.Commit()
 ```
 
-##### `RetryInsert`
+### `RetryInsert`
 
 - retry 채널은 다수의 insert 채널에서 보낼 수도 있고, 보내지 않을 수도 있어서 RetryInsert go 루틴의 종료 시점을 특정하기가 어렵습니다. 그래서, go 루틴 종료 시점은 10초 동안 채널이 비어있고 현재 실행되고 있는 insert thread가 없으면 RetryInsert go 루틴을 종료합니다.
 
@@ -277,7 +277,7 @@ RETRY:
 		}
 ```
 
-##### Logging
+### Logging
 
 - Trace, Info, Warning, Error 을 선언합니다.
 
@@ -333,7 +333,7 @@ func InitLogger(
   Error.Fatalf("%s, %3d, fail tx.rollback %s", tableInfo.TargetName, threadIndex, err)
 ```
 
-##### 버전 관리
+### 버전 관리
 
 - 버전은 대부분 하드 코딩으로 소스에 넣는데, 소스 코드는 수정하고 버전 변경을 놓치는 경우가 종종 있습니다. 이를 방지하고자 'x.x.x'는 하드코딩하고 git commit 해시와 빌드 일시를 버전에 포함했습니다.
 
