@@ -20,9 +20,9 @@ var (
 	DbErrLog  *log.Logger
 )
 
-type Logger struct {
-	*log.Logger
-}
+// type Logger struct {
+// 	*log.Logger
+// }
 
 func openFile(filename string, flag int) *os.File {
 
